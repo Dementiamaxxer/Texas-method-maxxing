@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════════════╗
-║          ТЕХАСЬКИЙ МЕТОД — ТРЕКЕР ТРЕНУВАНЬ                      ║
+║          ТЕХАСЬКИЙ МЕТОД — ТРЕКЕР ТРЕНУВАНЬ                     ║
 ║          Версія: Повноекранний контроль вправ та підходів        ║
 ╚══════════════════════════════════════════════════════════════════╝
 """
@@ -32,6 +32,11 @@ TAGS = [
 ]
 
 st.set_page_config(page_title="Техаський Метод PRO", page_icon="🏋️", layout="wide")
+
+# Заглушка для синхронізації
+def sync_to_gsheets():
+    st.write("Синхронізація запущена...")
+    # Тут буде твоя логіка пізніше
 
 # Стилізація інтерфейсу під Dark Mode
 st.markdown("""
@@ -275,7 +280,7 @@ def main():
             with ca3: ar_m = st.number_input("Повторення (Прес, Пн)", value=12, min_value=1)
             with ca4: at_m = st.selectbox("Самопочуття (Прес, Пн)", TAGS, key="at_m")
             
-            if st.button("💾 Зберегти тренування Понеділка", use_container_width=True):
+            if st.button("💾 Зберегти тренування Понеділка", width='stretch'):
                 d = str(date.today())
                 insert_workout(d, "Присід", "Понеділок", sq_m[0], sq_m[1], sq_m[2], sq_m[3], "")
                 insert_workout(d, "Жим лежачи", "Понеділок", bp_m[0], bp_m[1], bp_m[2], bp_m[3], "")
@@ -306,7 +311,7 @@ def main():
             with caw3: ar_w = st.number_input("Повторення (Прес, Ср)", value=12, min_value=1)
             with caw4: at_w = st.selectbox("Самопочуття (Прес, Ср)", TAGS, key="at_w")
             
-            if st.button("💾 Зберегти тренування Середи", use_container_width=True):
+            if st.button("💾 Зберегти тренування Середи", width='stretch'):
                 d = str(date.today())
                 insert_workout(d, "Присід", "Середа", sq_w[0], sq_w[1], sq_w[2], sq_w[3], "")
                 insert_workout(d, "Жим лежачи", "Середа", bp_w[0], bp_w[1], bp_w[2], bp_w[3], "")
@@ -330,7 +335,7 @@ def main():
             with caf3: ar_f = st.number_input("Повторення (Прес, Пт)", value=12, min_value=1)
             with caf4: at_f = st.selectbox("Самопочуття (Прес, Пт)", TAGS, key="at_f")
             
-            if st.button("💾 Фіксувати Рекорди П'ятниці", use_container_width=True):
+            if st.button("💾 Фіксувати Рекорди П'ятниці", width='stretch'):
                 d = str(date.today())
                 for ex, data in [("Присід", sq_f), ("Жим лежачи", bp_f), ("Станова тяга", dl_f)]:
                     insert_workout(d, ex, "П'ятниця", data[0], data[1], data[2], data[3], "")
@@ -377,7 +382,7 @@ def main():
             weight as [Вага (кг)], sets as [Підходи], reps as [Повт], 
             ROUND(calculated_1rm, 1) as [Розрахований 1ПМ], tag as [Статус Самопочуття] 
             FROM workouts ORDER BY date DESC, id DESC""", get_connection())
-        st.dataframe(df_log, use_container_width=True, hide_index=False)
+        st.dataframe(df_log, width='stretch', hide_index=False)
         
         # --- ВИДАЛЕННЯ ---
         st.subheader("🗑️ Видалення запису")
@@ -391,30 +396,28 @@ def main():
                 st.rerun()
 
     # ================== ТАБ 5: АНАЛІТИКА ТА ДАНІ ==================
-   # ================== ТАБ 5: АНАЛІТИКА ТА ДАНІ ==================
     with tab5:
         st.subheader("📈 Аналітика прогресу")
         
-        # Беремо дані з локальної бази для швидкості
         df = pd.read_sql_query("SELECT * FROM workouts ORDER BY date ASC", get_connection())
         
         if not df.empty:
-            # 1. ГРАФІК: ОКРЕМІ ВПРАВИ
             st.write("### 🏋️ Динаміка по вправах")
             
             all_exercises = df["exercise"].unique()
-            selected_ex = st.multiselect("Обери вправи для порівняння", all_exercises, default=MAIN_EXERCISES)
+            # ФІКС МУЛЬТІСЕЛЕКТА: перевіряємо, що існує в базі
+            valid_defaults = [ex for ex in MAIN_EXERCISES if ex in all_exercises]
+            selected_ex = st.multiselect("Обери вправи для порівняння", all_exercises, default=valid_defaults)
             
             if selected_ex:
                 df_ex = df[df["exercise"].isin(selected_ex)]
                 fig_ex = px.line(df_ex, x="date", y="calculated_1rm", color="exercise", 
                                  markers=True, title="Динаміка 1ПМ (Розрахунковий)")
                 fig_ex.update_layout(paper_bgcolor="#111827", plot_bgcolor="#1a1d27", font=dict(color="#94a3b8"))
-                st.plotly_chart(fig_ex, use_container_width=True)
+                st.plotly_chart(fig_ex, width='stretch')
             
             st.markdown("---")
             
-            # 2. ГРАФІК: ТОТАЛ
             st.write("### 🏆 Графік Тоталу (Сума 1ПМ Присіду, Жиму, Тяги)")
             
             df_total = df[df["exercise"].isin(MAIN_EXERCISES)].groupby("date")["calculated_1rm"].sum().reset_index()
@@ -422,14 +425,14 @@ def main():
             fig_total = px.area(df_total, x="date", y="calculated_1rm", 
                                 title="Сумарний Тотал Сили", markers=True, color_discrete_sequence=['#e85d04'])
             fig_total.update_layout(paper_bgcolor="#111827", plot_bgcolor="#1a1d27", font=dict(color="#94a3b8"))
-            st.plotly_chart(fig_total, use_container_width=True)
+            st.plotly_chart(fig_total, width='stretch')
             
-            # 3. КНОПКА СИНХРОНІЗАЦІЇ
             st.markdown("---")
             if st.button("🔄 Примусова синхронізація з Google Sheets"):
                 sync_to_gsheets()
                 st.success("Все синхронізовано!")
         else:
             st.info("Ще немає даних для графіків. Давай газуй у зал!")
+            
 if __name__ == "__main__":
     main()
