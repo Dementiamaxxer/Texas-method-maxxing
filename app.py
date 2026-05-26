@@ -341,7 +341,6 @@ def main():
                 st.rerun()
 
     # ================== ТАБ 4: ЖУРНАЛ ==================
-   # ================== ТАБ 4: ЖУРНАЛ ==================
     with tab4:
         st.subheader("📓 Лог виконаних тренувань за вправами")
         
@@ -392,37 +391,42 @@ def main():
                 st.rerun()
 
     # ================== ТАБ 5: АНАЛІТИКА ТА ДАНІ ==================
-    with tab5:
-        st.subheader("📈 Тренд розвитку сили (П'ятничні рекорди)")
-        df_charts = pd.read_sql_query("SELECT date, exercise, calculated_1rm FROM friday_records", get_connection())
+   with tab5:
+        st.subheader("📈 Аналітика прогресу")
         
-        if not df_charts.empty:
-            fig = px.line(df_charts, x="date", y="calculated_1rm", color="exercise", markers=True, title="Динаміка максимуму 1RM")
-            fig.update_layout(paper_bgcolor="#111827", plot_bgcolor="#1a1d27", font=dict(color="#94a3b8"))
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Історія порожня. Додай першу П'ятницю для побудови графіка!")
-
-        st.markdown("---")
-        st.subheader("💾 Резервне копіювання")
-        col_ex, col_im = st.columns(2)
+        # Беремо дані з нашої локальної бази (це швидше, ніж тягнути з хмари)
+        df = pd.read_sql_query("SELECT * FROM workouts ORDER BY date ASC", get_connection())
         
-        with col_ex:
-            st.write("**Експорт журналу**")
-            csv_export = pd.read_sql_query("SELECT * FROM workouts", get_connection()).to_csv(index=False)
-            st.download_button("⬇️ Завантажити копію у CSV", csv_export, "texas_backup.csv", "text/csv")
+        if not df.empty:
+            # 1. ГРАФІК: ОКРЕМІ ВПРАВИ
+            st.write("### 🏋️ Динаміка по вправах")
             
-        with col_im:
-            st.write("**Відновлення історії**")
-            uploaded_file = st.file_uploader("Оберіть файл CSV для імпорту", type=["csv"])
-            if uploaded_file is not None and st.button("🔄 Завантажити дані назад"):
-                try:
-                    df_import = pd.read_csv(uploaded_file)
-                    df_import.to_sql("workouts", get_connection(), if_exists="append", index=False)
-                    st.success("Усю історію успішно імпортовано та відновлено!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Помилка імпорту: {e}")
+            # Вибираємо всі унікальні вправи, які вже є в базі
+            all_exercises = df["exercise"].unique()
+            selected_ex = st.multiselect("Обери вправи для порівняння", all_exercises, default=MAIN_EXERCISES)
+            
+            if selected_ex:
+                df_ex = df[df["exercise"].isin(selected_ex)]
+                fig_ex = px.line(df_ex, x="date", y="calculated_1rm", color="exercise", 
+                                 markers=True, title="Динаміка 1ПМ (Розрахунковий)")
+                fig_ex.update_layout(paper_bgcolor="#111827", plot_bgcolor="#1a1d27", font=dict(color="#94a3b8"))
+                st.plotly_chart(fig_ex, use_container_width=True)
+            
+            st.markdown("---")
+            
+            # 2. ГРАФІК: ТОТАЛ
+            st.write("### 🏆 Графік Тоталу (Сума 1ПМ Присіду, Жиму, Тяги)")
+            
+            # Рахуємо суму 1ПМ для головних вправ по кожній даті
+            df_total = df[df["exercise"].isin(MAIN_EXERCISES)].groupby("date")["calculated_1rm"].sum().reset_index()
+            
+            fig_total = px.area(df_total, x="date", y="calculated_1rm", 
+                                title="Сумарний Тотал Сили", markers=True, color_discrete_sequence=['#e85d04'])
+            fig_total.update_layout(paper_bgcolor="#111827", plot_bgcolor="#1a1d27", font=dict(color="#94a3b8"))
+            st.plotly_chart(fig_total, use_container_width=True)
+            
+        else:
+            st.info("Ще немає даних для графіків. Давай газуй у зал!")
 
 if __name__ == "__main__":
     main()
