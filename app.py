@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════════════╗
-║         ТЕХАСЬКИЙ МЕТОД — ТРЕКЕР ТРЕНУВАНЬ                   ║
+║         ТЕХАСЬКИЙ МЕТОД — ТРЕКЕР ТРЕНУВАНЬ                      ║
 ║         Версія: Повноекранний контроль + Ручний ввід історії     ║
 ╚══════════════════════════════════════════════════════════════════╝
 """
@@ -110,25 +110,13 @@ def check_day_completed(date_str):
     res = get_connection().execute("SELECT count(*) FROM workouts WHERE date=?", (date_str,)).fetchone()
     return res[0] > 0
 
-def calc_warmup(working_weight, step):
-    return [
-        {"label": "Гриф", "weight": 20.0, "reps": 10},
-        {"label": "50%", "weight": round_to_step(working_weight * 0.50, step), "reps": 5},
-        {"label": "70%", "weight": round_to_step(working_weight * 0.70, step), "reps": 3},
-        {"label": "90%", "weight": round_to_step(working_weight * 0.90, step), "reps": 1},
-    ]
-
 def check_cns():
     rows = get_connection().execute(
         "SELECT tag FROM workouts WHERE tag IS NOT NULL AND tag != '—' ORDER BY date DESC, id DESC LIMIT 10"
     ).fetchall()
     tags = [r[0] for r in rows]
     if "⚡ Біль в попереку" in tags:
-        return True, "Виявлено тег «Біль в попереку». Зверни особливу увагу на техніку зриву в становій тязі та кут нахилу в присіданнях!"
-    if "🦴 Боліли суглоби" in tags:
-        return True, "Виявлено тег «Боліли суглоби». Рекомендується запланувати легкий тиждень (Делоад)."
-    if len(tags) >= 3 and all("На межі відмови" in t for t in tags[:3]):
-        return True, "Три підходи/вправи поспіль пройшли на межі відмови. ЦНС перевантажена!"
+        return True, "Виявлено тег «Біль в попереку». Зверни особливу увагу на техніку!"
     return False, ""
 
 # -----------------------------------------------------------------
@@ -136,6 +124,55 @@ def check_cns():
 # -----------------------------------------------------------------
 def main():
     init_db()
-    st.title("🏋️ Техаський Метод PRO")
+    st.title("🏋️ Техаський Метод")
     
+    # ФІКС: Повний виклик функції
     cns_warn, msg = check_cns()
+    if cns_warn:
+        st.markdown(f'<div class="cns-alert">⚠️ {msg}</div>', unsafe_allow_html=True)
+
+    tab1, tab2, tab3, tab4 = st.tabs(["⚙️ Налаштування", "📝 Планування", "📓 Журнал", "📈 Аналітика"])
+
+    with tab4:
+        st.subheader("📓 Журнал тренувань")
+        
+        # 1. БЛОК РУЧНОГО ДОДАВАННЯ
+        with st.expander("➕ Додати минуле тренування"):
+            m_date = st.date_input("Дата", date.today())
+            m_ex = st.text_input("Вправа")
+            m_w = st.number_input("Вага", step=2.5)
+            m_r = st.number_input("Повторення", value=5)
+            m_s = st.number_input("Підходи", value=3)
+            if st.button("Зберегти вручну"):
+                insert_workout(str(m_date), m_ex, "Ручний ввід", m_w, m_r, m_s, "—", "")
+                st.success("Додано!")
+                st.rerun()
+
+        # 2. БЛОК ІМПОРТУ
+        with st.expander("📂 Імпорт історії (CSV)"):
+            uploaded_file = st.file_uploader("Виберіть CSV", type=["csv"])
+            if uploaded_file and st.button("Завантажити дані"):
+                df = pd.read_csv(uploaded_file)
+                df.to_sql("workouts", get_connection(), if_exists="append", index=False)
+                st.success("Дані додано!")
+                st.rerun()
+
+        # 3. ВИВЕДЕННЯ ТАБЛИЦІ ТА ВИДАЛЕННЯ
+        st.markdown("---")
+        df_log = pd.read_sql_query("SELECT id, date, exercise, weight, sets, reps, tag FROM workouts ORDER BY id DESC", get_connection())
+        st.dataframe(df_log, use_container_width=True)
+
+        st.subheader("🗑️ Видалення запису")
+        del_id = st.number_input("ID запису для видалення:", min_value=1, step=1)
+        if st.button("Видалити"):
+            conn = get_connection()
+            conn.execute("DELETE FROM workouts WHERE id=?", (del_id,))
+            conn.commit()
+            st.rerun()
+
+    # (Тут продовжується решта твого коду для tab1, tab2, tab3...)
+    with tab1:
+        st.write("Налаштування...")
+
+if __name__ == "__main__":
+    main()
