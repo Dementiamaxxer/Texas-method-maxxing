@@ -130,6 +130,17 @@ def init_db():
     c.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
     conn.commit()
 
+    # 💊 АВТО-ФІКС ІСТОРІЇ: лікуємо криві значення 1ПМ (де замість точки збереглося казна-що)
+    c.execute("SELECT id, weight, reps FROM workouts WHERE calculated_1rm > 1000")
+    corrupted_rows = c.fetchall()
+    if corrupted_rows:
+        for row_id, w, r in corrupted_rows:
+            if r > 0:
+                # Рахуємо нормальний float за Бжицькі
+                correct_1rm = float(w) if r == 1 else float(w / (1.0278 - (0.0278 * r)))
+                c.execute("UPDATE workouts SET calculated_1rm = ? WHERE id = ?", (correct_1rm, row_id))
+        conn.commit()
+
 def save_setting(key, value):
     conn = get_connection()
     conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
@@ -138,7 +149,6 @@ def save_setting(key, value):
 def load_setting(key, default=""):
     row = get_connection().execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
     return row[0] if row else default
-
 # -----------------------------------------------------------------
 # ЛОГІКА РОЗРАХУНКІВ
 # -----------------------------------------------------------------
@@ -479,11 +489,16 @@ def main():
                 st.rerun()
 
     # ================== ТАБ 4: ЖУРНАЛ ==================
-    with tab4:
+with tab4:
         st.subheader("📓 Лог виконаних тренувань за вправами")
         
         with st.expander("➕ Додати тренування (минулі дати)"):
             st.write("Використовуй цю форму, щоб додати пропущені записи.")
+            
+            # Ініціалізуємо лічильник підходу в сесії, якщо його ще немає
+            if "manual_set_num" not in st.session_state:
+                st.session_state.manual_set_num = 1
+
             with st.form("manual_entry_form"):
                 col_m1, col_m2 = st.columns(2)
                 with col_m1:
@@ -500,14 +515,24 @@ def main():
                 with col_m5: m_s = st.number_input("Всього підходів у вправі", min_value=1, value=5)
                 
                 col_m6, col_m7 = st.columns(2)
-                with col_m6: m_set_num = st.number_input("Номер конкретного підходу, який вносиш", min_value=1, value=1)
+                with col_m6: 
+                    # Зв'язуємо віджет безпосередньо з session_state через key
+                    m_set_num = st.number_input(
+                        "Номер конкретного підходу, який вносиш", 
+                        min_value=1, 
+                        key="manual_set_num"
+                    )
                 with col_m7: m_set_feel = st.selectbox("Відчуття на цьому підході", SET_FEELINGS)
                 
                 m_comm = st.text_input("Коментар")
                 
                 if st.form_submit_button("💾 Зберегти в історію"):
                     insert_workout(str(m_date), m_ex, m_day, m_w, m_r, m_s, m_tag, m_comm, set_num=m_set_num, set_feeling=m_set_feel)
-                    st.success("Запис успішно додано!")
+                    
+                    # ПЛЮСУЄМО ПІДХІД НА НАСТУПНИЙ РАЗ (значення в key оновиться при rerun)
+                    st.session_state.manual_set_num = m_set_num + 1
+                    
+                    st.success(f"✅ Підхід №{m_set_num} успішно додано! Наступний підхід: №{m_set_num + 1}")
                     st.rerun()
 
         st.markdown("---")
@@ -529,7 +554,6 @@ def main():
                 conn.commit()
                 st.success(f"Запис №{del_id} видалено!")
                 st.rerun()
-
     # ================== ТАБ 5: АНАЛІТИКА ТА ДАНІ ==================
     with tab5:
         st.subheader("📈 Аналітика прогресу")
