@@ -51,12 +51,43 @@ def sync_to_gsheets():
         worksheet = sh.get_worksheet(0)
         
         df = pd.read_sql_query("SELECT * FROM workouts ORDER BY date DESC", get_connection())
+        
+        # ЗАХИСТ: Не даємо очистити хмару, якщо локальна БД порожня
+        if df.empty:
+            st.error("❌ Локальна база даних порожня! Синхронізацію скасовано, щоб не стерти хмару.")
+            return
+
         worksheet.clear()
         set_with_dataframe(worksheet, df)
-        
-        st.success("✅ Хмара успішно оновлена!")
+        st.success("✅ Хмара успішно оновлена поточними даними!")
     except Exception as e:
         st.error(f"❌ Помилка синхронізації: {e}")
+
+def pull_from_gsheets():
+    try:
+        creds_dict = st.secrets["gcp_service_account"]
+        gc = gspread.service_account_from_dict(creds_dict)
+        
+        sh = gc.open("TexasMethodDB") 
+        worksheet = sh.get_worksheet(0)
+        
+        # Читаємо всі дані з Google Sheets
+        data = worksheet.get_all_records()
+        if not data:
+            st.warning("📭 Гугл-таблиця порожня. Немає чого завантажувати.")
+            return
+            
+        df_cloud = pd.DataFrame(data)
+        
+        # Перезаписуємо локальну таблицю workouts
+        conn = get_connection()
+        conn.execute("DELETE FROM workouts")  # Очищаємо поточний локальний пустиш
+        df_cloud.to_sql("workouts", conn, if_exists="append", index=False)
+        
+        st.success("🚀 Дані успішно відновлені з Google Sheets у локальну базу!")
+        st.rerun()
+    except Exception as e:
+        st.error(f"❌ Помилка завантаження даних: {e}")
 
 # Стилізація інтерфейсу під Dark Mode
 st.markdown("""
@@ -520,10 +551,8 @@ def main():
                 st.plotly_chart(fig_ex, width='stretch')
             
             st.markdown("---")
-            
             st.write("### 🏆 Графік Тоталу (Сума максимумів 1ПМ Присіду, Жиму, Тяги)")
             
-            # ФІКС: Групуємо спочатку по даті та вправі, щоб взяти МАКСИМУМ за день, а потім сумуємо ці максимуми
             df_max_per_day = df[df["exercise"].isin(MAIN_EXERCISES)].groupby(["date", "exercise"])["calculated_1rm"].max().reset_index()
             df_total = df_max_per_day.groupby("date")["calculated_1rm"].sum().reset_index()
             
@@ -532,13 +561,20 @@ def main():
             fig_total.update_layout(paper_bgcolor="#111827", plot_bgcolor="#1a1d27", font=dict(color="#94a3b8"))
             st.plotly_chart(fig_total, width='stretch')
             
-            st.markdown("---")
-            if st.button("🔄 Примусова синхронізація з Google Sheets"):
-                sync_to_gsheets()
-                st.success("Все синхронізовано!")
         else:
-            st.info("Ще немає даних для графіків. Давай газуй у зал!")
+            st.info("💡 Локальна база даних порожня. Якщо ви запустили додаток заново, затягніть дані з хмари кнопкою нижче.")
             
+        st.markdown("---")
+        st.subheader("☁️ Хмарна синхронізація (Google Sheets)")
+        
+        col_sync1, col_sync2 = st.columns(2)
+        with col_sync1:
+            if st.button("📥 Завантажити дані з Хмари в додаток", use_container_width=True):
+                pull_from_gsheets()
+        with col_sync2:
+            if st.button("📤 Вивантажити локальні дані в Хмару", use_container_width=True):
+                sync_to_gsheets()
+                
         st.markdown("---")
         st.subheader("💾 Локальне резервне копіювання (Експорт / Імпорт)")
         
