@@ -44,21 +44,14 @@ st.set_page_config(page_title="Техаський Метод PRO", page_icon="�
 
 def sync_to_gsheets():
     try:
-        # Авторизація через секрети Streamlit
         creds_dict = st.secrets["gcp_service_account"]
         gc = gspread.service_account_from_dict(creds_dict)
         
-        # Відкриття таблиці (переконайся, що назва точно співпадає з файлом у Google Drive)
         sh = gc.open("TexasMethodDB") 
         worksheet = sh.get_worksheet(0)
         
-        # Отримання даних з бази
         df = pd.read_sql_query("SELECT * FROM workouts ORDER BY date DESC", get_connection())
-        
-        # Очищення листа перед записом (щоб не було дублів)
         worksheet.clear()
-        
-        # Запис даних одним махом
         set_with_dataframe(worksheet, df)
         
         st.success("✅ Хмара успішно оновлена!")
@@ -92,7 +85,6 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, exercise TEXT, day_type TEXT, 
         weight REAL, reps INTEGER, sets INTEGER, tag TEXT, comment TEXT, calculated_1rm REAL)""")
     
-    # Автоматична міграція для підтримки попідхідного аналізу (якщо база вже створена раніше)
     try:
         c.execute("ALTER TABLE workouts ADD COLUMN set_num INTEGER DEFAULT 1")
     except sqlite3.OperationalError:
@@ -144,10 +136,19 @@ def insert_friday_record(date_str, exercise, weight, reps=5):
     get_connection().commit()
 
 def get_last_record(exercise):
+    # 1. Спочатку шукаємо в таблиці чистих рекорді П'ятниці
     res = get_connection().execute(
         "SELECT weight, reps FROM friday_records WHERE exercise=? ORDER BY date DESC, id DESC LIMIT 1", (exercise,)
     ).fetchone()
-    return res if res else (50.0, 5)
+    if res:
+        return res
+        
+    # 2. Фолбек: якщо рекорди порожні, шукаємо останню робочу вагу в workouts (наприклад, з Журналу чи Понеділка)
+    res_workout = get_connection().execute(
+        "SELECT weight, reps FROM workouts WHERE exercise=? ORDER BY date DESC, id DESC LIMIT 1", (exercise,)
+    ).fetchone()
+    
+    return res_workout if res_workout else (50.0, 5)
 
 def check_day_completed(date_str):
     res = get_connection().execute("SELECT count(*) FROM workouts WHERE date=?", (date_str,)).fetchone()
@@ -211,7 +212,7 @@ def main():
         f_dl_1rm = calc_1rm_brzycki(f_dl_w, f_dl_r)
         friday_total = f_sq_1rm + f_bp_1rm + f_dl_1rm
         
-        st.subheader("🏆 Поточні максимуми (Остання П'ятниця)")
+        st.subheader("🏆 Поточні максимуми (Остання робоча вага)")
         c1, c2, c3, c4 = st.columns(4)
         with c1: st.metric("Поточний 1ПМ Присід", f"{f_sq_1rm:.1f} кг", f"База: {f_sq_w}кг х {f_sq_r}")
         with c2: st.metric("Поточний 1ПМ Жим", f"{f_bp_1rm:.1f} кг", f"База: {f_bp_w}кг х {f_bp_r}")
@@ -220,7 +221,7 @@ def main():
             st.markdown(f"""
             <div class="metric-card" style="border-color: #e85d04;">
                 <div class="metric-value">{friday_total:.1f} кг</div>
-                <div class="metric-label">Поточний П'ятничний Тотал</div>
+                <div class="metric-label">Поточний Тотал (Сума 1ПМ)</div>
             </div>
             """, unsafe_allow_html=True)
             
@@ -282,7 +283,6 @@ def main():
             target_w = round_to_step(last_w * perc, step) if not is_record else last_w + step
             
             st.markdown(f"##### {ex_name} (План: {sets}x{reps})")
-            
             ex_tag = st.selectbox(f"Загальний стан для {ex_name}", TAGS, key=f"tag_{ex_name}_{perc}")
             
             sets_data = []
@@ -353,7 +353,7 @@ def main():
                 for idx, (w, r, f) in enumerate(back_m_sets_data, 1):
                     insert_workout(d, back_ex_m, "Понеділок", w, r, len(back_m_sets_data), bt_m, "", set_num=idx, set_feeling=f)
                 for idx, (w, r, f) in enumerate(abs_m_sets_data, 1):
-                    insert_workout(d, abs_ex_m, "Понеділок", aw, ar, len(abs_m_sets_data), at_m, "", set_num=idx, set_feeling=f)
+                    insert_workout(d, abs_ex_m, "Понеділок", w, r, len(abs_m_sets_data), at_m, "", set_num=idx, set_feeling=f)
                 st.success("✅ Дані за Понеділок внесено!")
                 st.rerun()
 
@@ -406,7 +406,7 @@ def main():
                 for idx, (w, r, f) in enumerate(back_w_sets_data, 1):
                     insert_workout(d, back_ex_w, "Середа", w, r, len(back_w_sets_data), bt_w, "", set_num=idx, set_feeling=f)
                 for idx, (w, r, f) in enumerate(abs_w_sets_data, 1):
-                    insert_workout(d, abs_ex_w, "Середа", aw, ar, len(abs_w_sets_data), at_w, "", set_num=idx, set_feeling=f)
+                    insert_workout(d, abs_ex_w, "Середа", w, r, len(abs_w_sets_data), at_w, "", set_num=idx, set_feeling=f)
                 st.success("✅ Дані за Середу внесено!")
                 st.rerun()
 
@@ -443,7 +443,7 @@ def main():
                         insert_friday_record(d, ex, sets_data[0][0], sets_data[0][1])
                 
                 for idx, (w, r, f) in enumerate(abs_f_sets_data, 1):
-                    insert_workout(d, abs_ex_f, "П'ятниця", aw, ar, len(abs_f_sets_data), at_f, "", set_num=idx, set_feeling=f)
+                    insert_workout(d, abs_ex_f, "П'ятниця", w, r, len(abs_f_sets_data), at_f, "", set_num=idx, set_feeling=f)
                 st.success("🚀 Базу оновлено! Ваги перераховано.")
                 st.rerun()
 
@@ -451,7 +451,6 @@ def main():
     with tab4:
         st.subheader("📓 Лог виконаних тренувань за вправами")
         
-        # --- ФОРМА ВНЕСЕННЯ МИНУЛИХ ТРЕНУВАНЬ ---
         with st.expander("➕ Додати тренування (минулі дати)"):
             st.write("Використовуй цю форму, щоб додати пропущені записи.")
             with st.form("manual_entry_form"):
@@ -482,7 +481,6 @@ def main():
 
         st.markdown("---")
         
-        # --- ТАБЛИЦЯ ---
         df_log = pd.read_sql_query("""
             SELECT id, date as [Дата], exercise as [Вправа], day_type as [День], 
             set_num as [Підхід №], weight as [Вага (кг)], reps as [Повт], 
@@ -491,7 +489,6 @@ def main():
             FROM workouts ORDER BY date DESC, id DESC""", get_connection())
         st.dataframe(df_log, width='stretch', hide_index=False)
         
-        # --- ВИДАЛЕННЯ ---
         st.subheader("🗑️ Видалення запису")
         with st.expander("⚠️ Натисніть, щоб видалити помилковий запис"):
             del_id = st.number_input("Введіть ID запису (з таблиці вище):", min_value=1, step=1)
@@ -524,8 +521,11 @@ def main():
             
             st.markdown("---")
             
-            st.write("### 🏆 Графік Тоталу (Сума 1ПМ Присіду, Жиму, Тяги)")
-            df_total = df[df["exercise"].isin(MAIN_EXERCISES)].groupby("date")["calculated_1rm"].sum().reset_index()
+            st.write("### 🏆 Графік Тоталу (Сума максимумів 1ПМ Присіду, Жиму, Тяги)")
+            
+            # ФІКС: Групуємо спочатку по даті та вправі, щоб взяти МАКСИМУМ за день, а потім сумуємо ці максимуми
+            df_max_per_day = df[df["exercise"].isin(MAIN_EXERCISES)].groupby(["date", "exercise"])["calculated_1rm"].max().reset_index()
+            df_total = df_max_per_day.groupby("date")["calculated_1rm"].sum().reset_index()
             
             fig_total = px.area(df_total, x="date", y="calculated_1rm", 
                                 title="Сумарний Тотал Сили", markers=True, color_discrete_sequence=['#e85d04'])
@@ -539,7 +539,6 @@ def main():
         else:
             st.info("Ще немає даних для графіків. Давай газуй у зал!")
             
-        # --- БЛОК ІМПОРТУ ТА ЕКСПОРТУ ФАЙЛІВ ---
         st.markdown("---")
         st.subheader("💾 Локальне резервне копіювання (Експорт / Імпорт)")
         
@@ -573,7 +572,6 @@ def main():
             if st.button("🚀 Запустити імпорт у базу даних"):
                 try:
                     df_imported = pd.read_csv(uploaded_file)
-                    # Видаляємо колонку id, щоб SQLite згенерував нові правильні автоінкременти та уникнути конфліктів ключів
                     if 'id' in df_imported.columns:
                         df_imported = df_imported.drop(columns=['id'])
                         
