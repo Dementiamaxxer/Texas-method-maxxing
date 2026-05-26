@@ -138,4 +138,4 @@ def main():
     init_db()
     st.title("🏋️ Техаський Метод PRO")
     
-    cns_warn, msg =
+    cns_warn, msg = check_cns
