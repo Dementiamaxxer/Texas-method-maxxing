@@ -4,7 +4,8 @@
 ║          Версія: Повноекранний контроль вправ та підходів        ║
 ╚══════════════════════════════════════════════════════════════════╝
 """
-
+from gspread_dataframe import set_with_dataframe
+import gspread
 import streamlit as st
 import sqlite3
 import pandas as pd
@@ -33,11 +34,28 @@ TAGS = [
 
 st.set_page_config(page_title="Техаський Метод PRO", page_icon="🏋️", layout="wide")
 
-# Заглушка для синхронізації
 def sync_to_gsheets():
-    st.write("Синхронізація запущена...")
-    # Тут буде твоя логіка пізніше
-
+    try:
+        # Авторизація через секрети Streamlit
+        creds_dict = st.secrets["gcp_service_account"]
+        gc = gspread.service_account_from_dict(creds_dict)
+        
+        # Відкриття таблиці (переконайся, що назва точно співпадає з файлом у Google Drive)
+        sh = gc.open("TexasMethodDB") 
+        worksheet = sh.get_worksheet(0)
+        
+        # Отримання даних з бази
+        df = pd.read_sql_query("SELECT * FROM workouts ORDER BY date DESC", get_connection())
+        
+        # Очищення листа перед записом (щоб не було дублів)
+        worksheet.clear()
+        
+        # Запис даних одним махом
+        set_with_dataframe(worksheet, df)
+        
+        st.success("✅ Хмара успішно оновлена!")
+    except Exception as e:
+        st.error(f"❌ Помилка синхронізації: {e}")
 # Стилізація інтерфейсу під Dark Mode
 st.markdown("""
 <style>
