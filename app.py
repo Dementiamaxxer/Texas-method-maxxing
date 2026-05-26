@@ -391,17 +391,17 @@ def main():
                 st.rerun()
 
     # ================== ТАБ 5: АНАЛІТИКА ТА ДАНІ ==================
-   with tab5:
+   # ================== ТАБ 5: АНАЛІТИКА ТА ДАНІ ==================
+    with tab5:
         st.subheader("📈 Аналітика прогресу")
         
-        # Беремо дані з нашої локальної бази (це швидше, ніж тягнути з хмари)
+        # Беремо дані з локальної бази для швидкості
         df = pd.read_sql_query("SELECT * FROM workouts ORDER BY date ASC", get_connection())
         
         if not df.empty:
             # 1. ГРАФІК: ОКРЕМІ ВПРАВИ
             st.write("### 🏋️ Динаміка по вправах")
             
-            # Вибираємо всі унікальні вправи, які вже є в базі
             all_exercises = df["exercise"].unique()
             selected_ex = st.multiselect("Обери вправи для порівняння", all_exercises, default=MAIN_EXERCISES)
             
@@ -417,7 +417,6 @@ def main():
             # 2. ГРАФІК: ТОТАЛ
             st.write("### 🏆 Графік Тоталу (Сума 1ПМ Присіду, Жиму, Тяги)")
             
-            # Рахуємо суму 1ПМ для головних вправ по кожній даті
             df_total = df[df["exercise"].isin(MAIN_EXERCISES)].groupby("date")["calculated_1rm"].sum().reset_index()
             
             fig_total = px.area(df_total, x="date", y="calculated_1rm", 
@@ -425,8 +424,12 @@ def main():
             fig_total.update_layout(paper_bgcolor="#111827", plot_bgcolor="#1a1d27", font=dict(color="#94a3b8"))
             st.plotly_chart(fig_total, use_container_width=True)
             
+            # 3. КНОПКА СИНХРОНІЗАЦІЇ
+            st.markdown("---")
+            if st.button("🔄 Примусова синхронізація з Google Sheets"):
+                sync_to_gsheets()
+                st.success("Все синхронізовано!")
         else:
             st.info("Ще немає даних для графіків. Давай газуй у зал!")
-
 if __name__ == "__main__":
     main()
