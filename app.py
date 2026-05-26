@@ -341,15 +341,46 @@ def main():
                 st.rerun()
 
     # ================== ТАБ 4: ЖУРНАЛ ==================
+   # ================== ТАБ 4: ЖУРНАЛ ==================
     with tab4:
         st.subheader("📓 Лог виконаних тренувань за вправами")
+        
+        # --- ФОРМА ВНЕСЕННЯ МИНУЛИХ ТРЕНУВАНЬ ---
+        with st.expander("➕ Додати тренування (минулі дати)"):
+            st.write("Використовуй цю форму, щоб додати пропущені записи.")
+            with st.form("manual_entry_form"):
+                col_m1, col_m2 = st.columns(2)
+                with col_m1:
+                    m_date = st.date_input("Дата", date.today())
+                    m_day = st.selectbox("Тип дня", ["Понеділок", "Середа", "П'ятниця"])
+                with col_m2:
+                    all_ex = MAIN_EXERCISES + BACK_EXERCISES + ABS_EXERCISES
+                    m_ex = st.selectbox("Вправа", all_ex)
+                    m_tag = st.selectbox("Статус", TAGS)
+                
+                col_m3, col_m4, col_m5 = st.columns(3)
+                with col_m3: m_w = st.number_input("Вага (кг)", step=step_val, min_value=0.0)
+                with col_m4: m_r = st.number_input("Повтори", min_value=1)
+                with col_m5: m_s = st.number_input("Підходи", min_value=1)
+                
+                m_comm = st.text_input("Коментар")
+                
+                if st.form_submit_button("💾 Зберегти в історію"):
+                    insert_workout(str(m_date), m_ex, m_day, m_w, m_r, m_s, m_tag, m_comm)
+                    st.success("Запис успішно додано!")
+                    st.rerun()
+
+        st.markdown("---")
+        
+        # --- ТАБЛИЦЯ ---
         df_log = pd.read_sql_query("""
             SELECT id, date as [Дата], exercise as [Вправа], day_type as [День], 
             weight as [Вага (кг)], sets as [Підходи], reps as [Повт], 
             ROUND(calculated_1rm, 1) as [Розрахований 1ПМ], tag as [Статус Самопочуття] 
-            FROM workouts ORDER BY id DESC""", get_connection())
+            FROM workouts ORDER BY date DESC, id DESC""", get_connection())
         st.dataframe(df_log, use_container_width=True, hide_index=False)
         
+        # --- ВИДАЛЕННЯ ---
         st.subheader("🗑️ Видалення запису")
         with st.expander("⚠️ Натисніть, щоб видалити помилковий запис"):
             del_id = st.number_input("Введіть ID запису (з таблиці вище):", min_value=1, step=1)
